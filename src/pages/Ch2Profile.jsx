@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import BackgroundFX from "../components/layout/BackgroundFX";
@@ -10,15 +10,7 @@ import { useCtfStore } from "../state/useCtfStore";
 import { formatTime } from "../lib/time";
 import { useActiveTimer } from "../hooks/useActiveTimer";
 import { CHALLENGES } from "../data/challenges";
-
-import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  BadgeCheck,
-  MapPin,
-  Link2,
-} from "lucide-react";
+import { ArrowLeft, BadgeCheck, MapPin, Link2 } from "lucide-react";
 
 const CH2_FLAG = "FL@G{lD0R_M@ster?}";
 
@@ -143,7 +135,7 @@ export default function Ch2Profile() {
 
   // ✅ Timer runs while user is on profile pages too
   useActiveTimer({
-    running: !!ch2 && !ch2.comingSoon && ch2Progress?.status !== "solved",
+    running: !!ch2 && !ch2.comingSoon && ch2Progress?.status === "unsolved",
     onTick: (dt) => {
       setState((s) => ({
         ...s,
@@ -162,9 +154,24 @@ export default function Ch2Profile() {
   const idRaw = query.get("id") || "1";
   const id = Math.max(1, Math.min(12, parseInt(idRaw, 10) || 1));
   const profile = PROFILES.find((p) => p.id === id);
+    useEffect(() => {
+    if (String(id) === "8") {
+      setState((s) => ({
+        ...s,
+        challenges: {
+          ...s.challenges,
+          ch2: {
+            ...s.challenges.ch2,
+            status: s.challenges.ch2.status === "submitted" ? "submitted" : "unlocked",
+            solvedAt: s.challenges.ch2.solvedAt || Date.now(),
+            revealedFlag: s.challenges.ch2.revealedFlag || CH2_FLAG,
+          },
+        },
+      }));
+    }
+  }, [id, setState]);
 
-  const prevId = id > 1 ? id - 1 : 1;
-  const nextId = id < 12 ? id + 1 : 12;
+
 
   if (!profile) {
     return (
@@ -205,25 +212,6 @@ export default function Ch2Profile() {
               <ArrowLeft className="h-4 w-4" />
               Back to Challenge 2
             </Link>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                onClick={() => navigate(`/challenge/ch2/profile?id=${prevId}`)}
-                disabled={id === 1}
-                className={id === 1 ? "opacity-50" : ""}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => navigate(`/challenge/ch2/profile?id=${nextId}`)}
-                disabled={id === 12}
-                className={id === 12 ? "opacity-50" : ""}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
           </div>
 
           <Card className="overflow-hidden" hover={false}>

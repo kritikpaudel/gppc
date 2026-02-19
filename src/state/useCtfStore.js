@@ -39,10 +39,11 @@ function computeTotals(user) {
     const p = challenges[c.id];
     if (!p) continue;
     totalTimeMs += p.timeMs || 0;
-    if (p.status === "solved") {
+    if (p.status === "submitted") {
       solvedCount += 1;
       totalPoints += p.pointsAwarded || 0;
     }
+
   }
 
   return { totalPoints, solvedCount, totalTimeMs };

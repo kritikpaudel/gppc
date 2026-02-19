@@ -1,25 +1,29 @@
-export function computePoints({ pointsMax, seconds, wrongAttempts = 0 }) {
-  // Time scoring:
-  // Full points within 5 minutes, then -10% every 2 minutes after 5 mins, floor at 40%.
-  const FIVE_MIN = 5 * 60;     // 300s
-  const STEP = 2 * 60;         // 120s
-  const DECAY_PERCENT = 0.10;  // 10% per step after 5 min
-  const MIN_TIME_PERCENT = 0.40;
+// src/lib/scoring.js
 
-  let timePercent = 1;
+export function computePoints({ pointsMax, seconds, retakes = 0 }) {
+  // ---- Your time scoring rule ----
+  // "points within 5 mins. points decrease per 2mins after 5 min."
+  // We'll keep it simple and deterministic.
 
-  if (seconds > FIVE_MIN) {
-    const extraTime = seconds - FIVE_MIN;
-    const steps = Math.floor(extraTime / STEP);
-    timePercent = Math.max(1 - steps * DECAY_PERCENT, MIN_TIME_PERCENT);
+  const base = Number(pointsMax || 0);
+  const t = Math.max(0, Number(seconds || 0));
+
+  // Full points for first 5 minutes
+  const grace = 5 * 60; // 300s
+
+  let timePoints = base;
+
+  if (t > grace) {
+    const extra = t - grace;
+    const steps = Math.ceil(extra / (2 * 60)); // every 2 minutes after 5 min
+    // Decrease 10% of max per step, clamp to >= 0
+    timePoints = Math.max(0, Math.round(base * (1 - 0.1 * steps)));
   }
 
-  // Retry penalty:
-  // Every wrong attempt reduces points by 7%, floor multiplier at 70%.
-  const ATTEMPT_PENALTY = 0.07;  // 7% per wrong attempt
-  const MIN_ATTEMPT_MULT = 0.70; // never go below 70% from attempts alone
-  const attemptMult = Math.max(1 - wrongAttempts * ATTEMPT_PENALTY, MIN_ATTEMPT_MULT);
+  // ---- Retake penalty: -10% per retake ----
+  const r = Math.max(0, Number(retakes || 0));
+  const multiplier = Math.pow(0.9, r);
 
-  const final = pointsMax * timePercent * attemptMult;
-  return Math.max(0, Math.round(final));
+  const finalPoints = Math.max(0, Math.round(timePoints * multiplier));
+  return finalPoints;
 }

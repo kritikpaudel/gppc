@@ -71,48 +71,46 @@ export default function Dashboard() {
   const totalTime = formatTime(Math.floor(totals.totalTimeMs / 1000));
   const availableCount = CHALLENGES.filter((c) => !c.comingSoon).length;
 
-  // Local controlled inputs for each challenge flag field
   const [flagInputs, setFlagInputs] = useState(() =>
     Object.fromEntries(CHALLENGES.map((c) => [c.id, ""]))
   );
 
-  // Small toast for feedback
   const [toast, setToast] = useState({ ok: false, msg: "" });
   const showToast = (ok, msg) => {
     setToast({ ok, msg });
     if (msg) setTimeout(() => setToast({ ok: false, msg: "" }), 1600);
   };
-    const exportResults = () => {
-      const payload = {
-        app: "gppc-mini-ctf",
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        fullName: state.fullName || "",
-        totals,
-        challenges: state.challenges,
-      };
-
-      const json = JSON.stringify(payload, null, 2);
-      const blob = new Blob([json], { type: "application/json" });
-
-      const safeName = (state.fullName || "team")
-        .trim()
-        .replace(/[^\w\-]+/g, "_")
-        .slice(0, 40);
-
-      const fileName = `ctf-results_${safeName || "team"}_${Date.now()}.json`;
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-
-      showToast(true, "Exported results JSON");
+  const exportResults = () => {
+    const payload = {
+      app: "gppc-mini-ctf",
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      fullName: state.fullName || "",
+      totals,
+      challenges: state.challenges,
     };
+
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+
+    const safeName = (state.fullName || "team")
+      .trim()
+      .replace(/[^\w\-]+/g, "_")
+      .slice(0, 40);
+
+    const fileName = `ctf-results_${safeName || "team"}_${Date.now()}.json`;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    showToast(true, "Exported results JSON");
+  };
 
 
   const submitFlag = (challengeId) => {
@@ -135,66 +133,57 @@ export default function Dashboard() {
       return;
     }
 
-    if (progress.status === "solved") {
-      showToast(false, "Already solved. Retake from inside the challenge if needed.");
+    // ✅ Must unlock flag inside challenge first
+    if (progress.status !== "unlocked") {
+      showToast(false, "Unlock the flag in the challenge first, then submit it here.");
       return;
     }
 
-    // Wrong flag -> attempt penalty
+    // Wrong flag => show error, NO penalty
     if (entered !== expected) {
-      setState((s) => ({
-        ...s,
-        challenges: {
-          ...s.challenges,
-          [challengeId]: {
-            ...s.challenges[challengeId],
-            attempts: (s.challenges[challengeId].attempts || 0) + 1,
-          },
-        },
-      }));
       showToast(false, "Incorrect flag.");
       return;
     }
 
-    // Correct flag -> compute points with time + attempts
     const seconds = Math.floor((progress.timeMs || 0) / 1000);
-    const wrongAttempts = progress.attempts || 0;
+    const retakes = progress.attempts || 0; // attempts repurposed as retakes
 
     const awarded = computePoints({
       pointsMax: meta.pointsMax,
       seconds,
-      wrongAttempts,
+      retakes,
     });
 
+    // ✅ Now finalize: submitted + award points
     setState((s) => ({
       ...s,
       challenges: {
         ...s.challenges,
         [challengeId]: {
           ...s.challenges[challengeId],
-          status: "solved",
-          solvedAt: Date.now(),
+          status: "submitted",
           pointsAwarded: awarded,
+          submittedFlag: entered,
+          submittedAt: Date.now(),
         },
       },
     }));
 
-    showToast(true, `Correct! +${awarded} points`);
+    showToast(true, `Submitted! +${awarded} points recorded`);
   };
 
-  // Optional: points preview shown on dashboard per challenge (live, before solved)
   const pointsPreviewById = useMemo(() => {
     const out = {};
     for (const c of CHALLENGES) {
       const p = state.challenges[c.id];
       if (!p) continue;
 
-      if (p.status === "solved") {
+      if (p.status === "submitted") {
         out[c.id] = p.pointsAwarded || 0;
       } else {
         const seconds = Math.floor((p.timeMs || 0) / 1000);
-        const wrongAttempts = p.attempts || 0;
-        out[c.id] = computePoints({ pointsMax: c.pointsMax, seconds, wrongAttempts });
+        const retakes = p.attempts || 0;
+        out[c.id] = computePoints({ pointsMax: c.pointsMax, seconds, retakes });
       }
     }
     return out;
@@ -287,14 +276,13 @@ export default function Dashboard() {
             <div>
               <h2 className="text-xl font-semibold tracking-tight">Challenges</h2>
               <p className="text-sm text-white/55">
-                Open a challenge to start its timer. Timers pause when you’re inactive or tab is hidden.
+                Unlock flag inside the challenge, then submit it here to record score.
               </p>
             </div>
 
-            {/* ✅ Admin removed as requested */}
             <div className="flex items-center gap-3">
               <div className="text-xs text-white/45 hidden sm:block">
-                Points decrease with time + retries.
+                Points decrease with time + (-10% per retake).
               </div>
 
               <Button
@@ -302,13 +290,12 @@ export default function Dashboard() {
                 onClick={exportResults}
                 disabled={!state.fullName.trim()}
                 className={!state.fullName.trim() ? "opacity-50" : ""}
-                title={!state.fullName.trim() ? "Enter your full name first" : "Export results as JSON"}
               >
-                Export Results
+                Export JSON
               </Button>
             </div>
-
           </div>
+
 
           {/* Challenge cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -316,9 +303,12 @@ export default function Dashboard() {
               const progress = state.challenges[c.id];
               const disabledOpen = !state.fullName.trim() || c.comingSoon;
 
-              const solved = progress?.status === "solved";
+              const status = progress?.status || "unsolved"; // unsolved | unlocked | submitted
+              const unlocked = status === "unlocked";
+              const submitted = status === "submitted";
+
               const timeStr = formatTime(Math.floor((progress?.timeMs || 0) / 1000));
-              const attempts = progress?.attempts || 0;
+              const retakes = progress?.attempts || 0;
 
               return (
                 <Card key={c.id} className="p-6">
@@ -338,9 +328,13 @@ export default function Dashboard() {
                         <Lock className="h-3.5 w-3.5" />
                         Coming soon
                       </span>
-                    ) : solved ? (
+                    ) : submitted ? (
                       <span className="inline-flex items-center rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">
-                        Solved
+                        Submitted
+                      </span>
+                    ) : unlocked ? (
+                      <span className="inline-flex items-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-200">
+                        Flag Unlocked
                       </span>
                     ) : (
                       <span className="inline-flex items-center rounded-2xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
@@ -357,7 +351,7 @@ export default function Dashboard() {
                         Time: <span className="text-white/80 font-medium">{timeStr}</span>
                       </div>
                       <div>
-                        Attempts: <span className="text-white/80 font-medium">{attempts}</span>
+                        Retakes: <span className="text-white/80 font-medium">{retakes}</span>
                       </div>
                     </div>
 
@@ -369,42 +363,39 @@ export default function Dashboard() {
                     </Link>
                   </div>
 
-                  {/* ✅ Submit flag block */}
+                  {/* Submit flag block */}
                   {!c.comingSoon && (
                     <div className="mt-5 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
                       <div>
                         <div className="text-xs text-white/55 mb-2">Submit flag</div>
                         <Input
                           value={flagInputs[c.id] || ""}
-                          onChange={(e) =>
-                            setFlagInputs((s) => ({ ...s, [c.id]: e.target.value }))
-                          }
-                          placeholder={solved ? "Solved" : "Enter flag…"}
+                          onChange={(e) => setFlagInputs((s) => ({ ...s, [c.id]: e.target.value }))}
+                          placeholder={submitted ? "Submitted" : unlocked ? "Paste flag here…" : "Unlock flag in challenge first"}
                           className="font-mono"
-                          disabled={solved}
+                          disabled={submitted || !unlocked}
                         />
                       </div>
 
                       <Button
                         onClick={() => submitFlag(c.id)}
-                        disabled={solved}
-                        className={solved ? "opacity-50" : ""}
-                        title={solved ? "Already solved" : "Submit flag"}
+                        disabled={submitted || !unlocked}
+                        className={submitted || !unlocked ? "opacity-50" : ""}
+                        title={!unlocked ? "Unlock the flag first" : submitted ? "Already submitted" : "Submit flag"}
                       >
                         Submit
                       </Button>
                     </div>
                   )}
 
-                  {solved && (
+                  {submitted && (
                     <div className="mt-3 text-xs text-white/45">
-                      Score locked. Awarded:{" "}
+                      Score recorded. Awarded:{" "}
                       <span className="text-white/80 font-medium">{progress?.pointsAwarded || 0}</span>{" "}
                       pts
                     </div>
                   )}
 
-                  {/* Optional quick link for CH2 profile entry */}
                   {c.id === "ch2" && !c.comingSoon && (
                     <div className="mt-4">
                       <Button

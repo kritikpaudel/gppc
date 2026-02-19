@@ -29,11 +29,14 @@ export default function Challenge() {
 
   const totalTime = formatTime(Math.floor(totals.totalTimeMs / 1000));
   const seconds = Math.floor((progress?.timeMs || 0) / 1000);
-  const wrongAttempts = progress?.attempts || 0;
 
-  // Active-only timer tick for this challenge (stops when solved)
+  // attempts is now RETAKES
+  const retakes = progress?.attempts || 0;
+
+  // ✅ Active-only timer tick for this challenge:
+  // Runs only while unsolved. Stops once flag is unlocked/submitted.
   useActiveTimer({
-    running: !!challenge && !challenge.comingSoon && progress?.status !== "solved",
+    running: !!challenge && !challenge.comingSoon && progress?.status === "unsolved",
     onTick: (dt) => {
       setState((s) => ({
         ...s,
@@ -48,29 +51,19 @@ export default function Challenge() {
     },
   });
 
+  // Preview points IF they were to submit now (time + retakes only)
   const pointsPreview = useMemo(() => {
     if (!challenge) return 0;
     return computePoints({
       pointsMax: challenge.pointsMax,
       seconds,
-      wrongAttempts,
+      retakes,
     });
-  }, [challenge, seconds, wrongAttempts]);
+  }, [challenge, seconds, retakes]);
 
-  const addWrongAttempt = () => {
-    setState((s) => ({
-      ...s,
-      challenges: {
-        ...s.challenges,
-        [id]: {
-          ...s.challenges[id],
-          attempts: (s.challenges[id].attempts || 0) + 1,
-        },
-      },
-    }));
-  };
-
-  const markSolved = (flag) => {
+  // ✅ Called when challenge is solved INSIDE challenge page.
+  // This only unlocks/reveals the flag.
+  const markUnlocked = (flag) => {
     if (!challenge) return;
 
     setState((s) => ({
@@ -79,13 +72,9 @@ export default function Challenge() {
         ...s.challenges,
         [id]: {
           ...s.challenges[id],
-          status: "solved",
+          status: "unlocked", // ✅ unlocked, not submitted
           solvedAt: Date.now(),
-          pointsAwarded: computePoints({
-            pointsMax: challenge.pointsMax,
-            seconds,
-            wrongAttempts: s.challenges[id].attempts || 0,
-          }),
+          revealedFlag: flag, // optional: helpful for admin/debug
         },
       },
     }));
@@ -93,12 +82,12 @@ export default function Challenge() {
     setFlagModal({ open: true, flag });
   };
 
-  // Retake whole challenge
+  // ✅ Retake: reset progress and increment retakes counter
   const retakeChallenge = () => {
     if (!challenge) return;
 
     const ok = window.confirm(
-      "Retake Challenge?\n\nThis will reset time, attempts, and points for this challenge on this device."
+      "Retake Challenge?\n\nThis will reset time and progress for this challenge on this device.\nRetake penalty: -10% per retake."
     );
     if (!ok) return;
 
@@ -114,9 +103,10 @@ export default function Challenge() {
           timeMs: 0,
           solvedAt: null,
           submittedFlag: "",
-          pointsAwarded: 0,
-          attempts: 0,
+          pointsAwarded: 0, // awarded only after dashboard submit
+          attempts: (s.challenges[id].attempts || 0) + 1, // ✅ retakes++
           status: "unsolved",
+          revealedFlag: "",
         },
       },
     }));
@@ -160,6 +150,8 @@ export default function Challenge() {
     );
   }
 
+  const status = progress?.status || "unsolved"; // unsolved | unlocked | submitted
+
   return (
     <div className="min-h-screen text-white">
       <BackgroundFX />
@@ -185,29 +177,30 @@ export default function Challenge() {
               </div>
 
               <div className="hidden sm:block text-xs text-white/55 text-right">
-                Points if solved now:{" "}
+                Points if submitted now:{" "}
                 <span className="text-white/80 font-medium">{pointsPreview}</span>
                 <div className="text-[11px] text-white/40 mt-0.5">
-                  Wrong attempts: <span className="text-white/70">{wrongAttempts}</span>
+                  Retakes: <span className="text-white/70">{retakes}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* ✅ Render correct challenge */}
           {id === "ch1" ? (
             <Challenge1
-              solved={progress?.status === "solved"}
-              attempts={wrongAttempts}
-              onWrongAttempt={addWrongAttempt}
-              onSolved={markSolved}
+              status={status}
+              retakes={retakes}
+              onUnlocked={markUnlocked}
               onBack={() => navigate("/")}
               onRetakeChallenge={retakeChallenge}
             />
           ) : id === "ch2" ? (
             <Challenge2
-              solved={progress?.status === "solved"}
+              status={status}
+              retakes={retakes}
+              onUnlocked={markUnlocked} // if you later want CH2 to unlock inside challenge
               onBack={() => navigate("/")}
+              onRetakeChallenge={retakeChallenge}
             />
           ) : (
             <Card className="p-8" hover={false}>
@@ -220,7 +213,7 @@ export default function Challenge() {
         </motion.div>
       </main>
 
-      {/* Flag Modal */}
+      {/* Flag Modal (Unlock only; submission is on dashboard) */}
       <AnimatePresence>
         {flagModal.open && (
           <motion.div
@@ -243,8 +236,8 @@ export default function Challenge() {
                       <CheckCircle2 className="h-5 w-5 text-emerald-200" />
                     </div>
                     <div>
-                      <div className="text-sm font-semibold tracking-tight">Challenge Solved</div>
-                      <div className="text-xs text-white/55">Flag unlocked</div>
+                      <div className="text-sm font-semibold tracking-tight">Flag Unlocked</div>
+                      <div className="text-xs text-white/55">Now submit it on the dashboard to record your score.</div>
                     </div>
                   </div>
 
@@ -268,7 +261,7 @@ export default function Challenge() {
                   <Button variant="ghost" onClick={() => setFlagModal({ open: false, flag: "" })}>
                     Close
                   </Button>
-                  <Button onClick={() => navigate("/")}>Back to Dashboard</Button>
+                  <Button onClick={() => navigate("/")}>Go to Dashboard</Button>
                 </div>
               </Card>
             </motion.div>

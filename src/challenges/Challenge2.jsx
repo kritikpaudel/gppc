@@ -1,11 +1,14 @@
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import { motion } from "framer-motion";
-import { UserRound } from "lucide-react";
+import { UserRound, RotateCcw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-export default function Challenge2({ solved = false, onBack }) {
+export default function Challenge2({ status = "unsolved", onBack, onRetakeChallenge }) {
   const navigate = useNavigate();
+
+  const unlocked = status === "unlocked";
+  const submitted = status === "submitted";
 
   return (
     <div className="space-y-6">
@@ -22,9 +25,13 @@ export default function Challenge2({ solved = false, onBack }) {
             </p>
           </div>
 
-          {solved ? (
+          {submitted ? (
             <div className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200">
-              Solved
+              Submitted
+            </div>
+          ) : unlocked ? (
+            <div className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-200">
+              Flag Unlocked
             </div>
           ) : null}
         </div>
@@ -39,6 +46,11 @@ export default function Challenge2({ solved = false, onBack }) {
 
           <Button variant="ghost" onClick={onBack}>
             Back
+          </Button>
+
+          <Button variant="ghost" onClick={onRetakeChallenge}>
+            <RotateCcw className="h-4 w-4" />
+            Retake (-10%)
           </Button>
         </div>
 

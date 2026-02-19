@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import md5 from "blueimp-md5";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
-import { Copy, CheckCircle2, ShieldAlert, RotateCcw, ArrowLeft } from "lucide-react";
+import { ArrowRight, CheckCircle2, XCircle, Info, RotateCcw, ArrowLeft } from "lucide-react";
+import { useCtfStore } from "../state/useCtfStore";
 
 const FLAG = "FL@G{Woohoo_C0ng0_U_D!d_It}";
 
@@ -56,307 +56,282 @@ const PROFILES = [
   },
 ];
 
-function Field({ k, v }) {
+// Browser MD5
+async function md5Hex(text) {
+  const data = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("MD5", data);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function Badge({ ok, children }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-white/10 py-2 text-sm">
-      <div className="text-white/55">{k}</div>
-      <div className="text-white/85 font-medium text-right">{v}</div>
-    </div>
+    <span
+      className={[
+        "inline-flex items-center gap-2 rounded-2xl border px-3 py-1 text-xs",
+        ok
+          ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+          : "border-white/10 bg-white/5 text-white/70",
+      ].join(" ")}
+    >
+      {children}
+    </span>
   );
 }
 
-function normalizeHash(v) {
-  return (v || "").trim().toLowerCase();
-}
+export default function Challenge1({ status = "unsolved", retakes = 0, onUnlocked, onBack, onRetakeChallenge }) {
+  const solvedHere = status !== "unsolved"; // unlocked/submitted
+  const { state } = useCtfStore();
+  const timeMs = state?.challenges?.ch1?.timeMs || 0;
+  const hintsUnlocked = timeMs >= 2 * 60 * 1000;
 
-function isLikelyMd5(v) {
-  const s = normalizeHash(v);
-  return /^[a-f0-9]{32}$/.test(s);
-}
-
-export default function Challenge1({
-  onSolved,
-  onWrongAttempt,
-  solved = false,
-  attempts = 0,
-  onBack,
-  onRetakeChallenge, // ✅ new (reset progress)
-}) {
-  const [md5Input, setMd5Input] = useState("");
-  const md5Output = useMemo(() => (md5Input ? md5(md5Input) : ""), [md5Input]);
+  const [plain, setPlain] = useState("");
+  const [generated, setGenerated] = useState("");
+  const [genLoading, setGenLoading] = useState(false);
 
   const [answers, setAnswers] = useState({ p1: "", p2: "", p3: "" });
+  const [check, setCheck] = useState(null);
 
-  const [toast, setToast] = useState({ ok: false, msg: "" });
-  const [fieldState, setFieldState] = useState({
-    tried: false,
-    wrong: { p1: false, p2: false, p3: false },
-    shake: { p1: 0, p2: 0, p3: 0 },
-  });
-
+  const [toast, setToast] = useState({ open: false, ok: false, msg: "" });
   const showToast = (ok, msg) => {
-    setToast({ ok, msg });
-    if (msg) setTimeout(() => setToast({ ok: false, msg: "" }), 1400);
+    setToast({ open: true, ok, msg });
+    setTimeout(() => setToast({ open: false, ok: false, msg: "" }), 1600);
   };
 
-  const copy = async (text) => {
+  const normalized = (s) => (s || "").trim().toLowerCase();
+
+  const doGenerate = async () => {
+    setGenLoading(true);
     try {
-      await navigator.clipboard.writeText(text);
-      showToast(true, "Copied!");
-    } catch {
-      showToast(false, "Copy blocked by browser.");
+      const out = await md5Hex(plain);
+      setGenerated(out);
+    } finally {
+      setGenLoading(false);
     }
   };
 
-  const clearInputsNoPenalty = () => {
-    setAnswers({ p1: "", p2: "", p3: "" });
-    setFieldState((s) => ({
-      ...s,
-      tried: false,
-      wrong: { p1: false, p2: false, p3: false },
-    }));
-  };
+  const validateAll = () => {
+    const r = {
+      p1: normalized(answers.p1) === EXPECTED.p1,
+      p2: normalized(answers.p2) === EXPECTED.p2,
+      p3: normalized(answers.p3) === EXPECTED.p3,
+    };
+    setCheck(r);
 
-  // Penalty retake (while unsolved)
-  const retakeAttempt = () => {
-    if (solved) return;
-    onWrongAttempt?.();
-    clearInputsNoPenalty();
-    showToast(false, "Retake used.");
-  };
+    const wrongKeys = Object.entries(r)
+      .filter(([, ok]) => !ok)
+      .map(([k]) => k);
 
-  const submit = () => {
-    if (solved) return;
-
-    const a1 = normalizeHash(answers.p1);
-    const a2 = normalizeHash(answers.p2);
-    const a3 = normalizeHash(answers.p3);
-
-    const f1 = isLikelyMd5(a1);
-    const f2 = isLikelyMd5(a2);
-    const f3 = isLikelyMd5(a3);
-
-    if (!f1 || !f2 || !f3) {
-      setFieldState((s) => ({
-        tried: true,
-        wrong: { p1: !f1, p2: !f2, p3: !f3 },
-        shake: {
-          p1: s.shake.p1 + (!f1 ? 1 : 0),
-          p2: s.shake.p2 + (!f2 ? 1 : 0),
-          p3: s.shake.p3 + (!f3 ? 1 : 0),
-        },
-      }));
-      showToast(false, "Invalid format. Submit 32-char MD5 values.");
+    if (wrongKeys.length === 0) {
+      onUnlocked?.(FLAG);
+      showToast(true, "All profiles verified. Flag unlocked!");
       return;
     }
 
-    const ok1 = a1 === EXPECTED.p1;
-    const ok2 = a2 === EXPECTED.p2;
-    const ok3 = a3 === EXPECTED.p3;
-
-    if (!(ok1 && ok2 && ok3)) {
-      onWrongAttempt?.();
-      setFieldState((s) => ({
-        tried: true,
-        wrong: { p1: !ok1, p2: !ok2, p3: !ok3 },
-        shake: {
-          p1: s.shake.p1 + (!ok1 ? 1 : 0),
-          p2: s.shake.p2 + (!ok2 ? 1 : 0),
-          p3: s.shake.p3 + (!ok3 ? 1 : 0),
-        },
-      }));
-      showToast(false, "Incorrect. One or more hashes do not match.");
-      return;
-    }
-
-    showToast(true, "Correct! Flag unlocked.");
-    onSolved?.(FLAG);
+    const labelMap = { p1: "Profile 1", p2: "Profile 2", p3: "Profile 3" };
+    if (wrongKeys.length === 1) showToast(false, `${labelMap[wrongKeys[0]]} is incorrect.`);
+    else showToast(false, `${wrongKeys.map((k) => labelMap[k]).join(", ")} are incorrect.`);
   };
 
-  const inputClass = (key) => {
-    const bad = fieldState.tried && fieldState.wrong[key];
-    return ["font-mono", bad ? "border-rose-400/40 ring-2 ring-rose-400/10" : ""].join(" ");
-  };
+  const statusLine = useMemo(() => {
+    if (!check) return null;
+    const okCount = Object.values(check).filter(Boolean).length;
+    return `${okCount}/3 correct`;
+  }, [check]);
 
   return (
     <div className="space-y-6">
-      <Card className="p-6" hover={false}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-xs tracking-[0.35em] text-white/55">SCENARIO</div>
-            <h2 className="mt-2 text-xl font-semibold tracking-tight">
-              Password Cracking (MD5) — 3 Profiles
-            </h2>
-            <p className="mt-3 text-white/60 text-sm leading-relaxed">
-              You’re auditing weak password practices. Each profile uses a predictable password pattern
-              based on personal details. Generate the password, convert it to MD5, and submit the MD5
-              hash for all three profiles to unlock the final flag.
-            </p>
-          </div>
-
-          {solved ? (
-            <div className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200">
-              <CheckCircle2 className="h-4 w-4" />
-              Solved
-            </div>
-          ) : (
-            <div className="text-xs text-white/45 text-right">
-              Wrong attempts: <span className="text-white/70 font-medium">{attempts}</span>
-            </div>
-          )}
-        </div>
-
-        {/* ✅ If solved, still offer RETAKE CHALLENGE (reset for new team) */}
-        {solved && (
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-sm text-white/70">
-              Challenge is locked because it’s solved. You can retake to reset progress on this device.
-            </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={onBack}>
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </Button>
-              <Button onClick={onRetakeChallenge}>
-                <RotateCcw className="h-4 w-4" />
-                Retake Challenge
-              </Button>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* Profiles */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {PROFILES.map((p) => (
-          <Card key={p.key} className="p-5">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold tracking-tight">{p.label}</div>
-              <div className="text-xs text-white/55">User</div>
-            </div>
-
-            <div className="mt-4">
-              <Field k="Name" v={p.name} />
-              <Field k="Spouse Name" v={p.spouseName} />
-              <Field k="Age" v={p.age} />
-              <Field k="DOB" v={p.dob} />
-              <Field k="Email" v={p.email} />
-              <Field k="Company" v={p.company} />
-              <Field k="Designation" v={p.designation} />
-              <Field k="Pet Name(s)" v={p.pets.join(", ")} />
-              <Field k="City" v={p.city} />
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {/* MD5 Generator */}
-      <Card className="p-6" hover={false}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-xs tracking-[0.35em] text-white/55">MD5 GENERATOR</div>
-            <div className="mt-2 text-sm text-white/60">
-              Enter your guessed password and generate its MD5 hash.
-            </div>
-          </div>
-
-          {toast.msg && (
-            <div
-              className={[
-                "inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs",
-                toast.ok
-                  ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
-                  : "border-rose-400/20 bg-rose-400/10 text-rose-200",
-              ].join(" ")}
-            >
-              {toast.ok ? <CheckCircle2 className="h-4 w-4" /> : <ShieldAlert className="h-4 w-4" />}
+      <AnimatePresence>
+        {toast.open && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className={[
+              "fixed left-1/2 top-5 z-50 -translate-x-1/2 rounded-2xl border px-4 py-2 text-xs backdrop-blur",
+              toast.ok
+                ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+                : "border-rose-400/20 bg-rose-400/10 text-rose-200",
+            ].join(" ")}
+          >
+            <div className="flex items-center gap-2">
+              {toast.ok ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
               {toast.msg}
             </div>
-          )}
-        </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        <div className="mt-5 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+      <Card className="p-6" hover={false}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="text-xs text-white/55 mb-2">Password guess</div>
-            <Input
-              value={md5Input}
-              onChange={(e) => setMd5Input(e.target.value)}
-              placeholder="Type password guess…"
-              className="font-mono"
-            />
-          </div>
-          <Button variant="ghost" onClick={() => setMd5Input("")}>
-            Clear
-          </Button>
-        </div>
+            <div className="text-xs tracking-[0.35em] text-white/55">SCENARIO</div>
+            <h2 className="mt-2 text-xl font-semibold tracking-tight">Credential Guess + MD5</h2>
+            <p className="mt-3 text-white/60 text-sm leading-relaxed max-w-3xl">
+              Derive a password for each profile, generate its MD5, and verify all three.
+              After unlocking the flag, submit it on the dashboard to record your score.
+            </p>
 
-        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-          <div className="text-xs text-white/55">MD5 Output</div>
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <div className="font-mono text-sm text-white/85 break-all">
-              {md5Output || "—"}
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Badge ok={false}>Retakes: <span className="text-white/85 font-medium">{retakes}</span></Badge>
+              {statusLine ? <Badge ok={false}>{statusLine}</Badge> : null}
+              {status === "unlocked" ? <Badge ok={true}>Flag Unlocked</Badge> : null}
+              {status === "submitted" ? <Badge ok={true}>Submitted</Badge> : null}
             </div>
-            <Button
-              variant="ghost"
-              onClick={() => md5Output && copy(md5Output)}
-              disabled={!md5Output}
-              className={!md5Output ? "opacity-50" : ""}
-            >
-              <Copy className="h-4 w-4" />
-              Copy
+          </div>
+
+          <div className="flex flex-wrap gap-2 justify-end">
+            <Button variant="ghost" onClick={onBack}>
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Button>
+            <Button variant="ghost" onClick={onRetakeChallenge}>
+              <RotateCcw className="h-4 w-4" />
+              Retake (-10%)
             </Button>
           </div>
         </div>
       </Card>
 
-      {/* Submission */}
-      <Card className="p-6" hover={false}>
-        <div className="text-xs tracking-[0.35em] text-white/55">SUBMISSION</div>
-        <div className="mt-2 text-sm text-white/60">
-          Submit the MD5 hash for each profile.
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {PROFILES.map((p) => {
+          const ok = check ? !!check[p.key] : null;
 
-        <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
-          {["p1", "p2", "p3"].map((k) => (
-            <motion.div
-              key={`${k}-${fieldState.shake[k]}`}
-              animate={fieldState.tried && fieldState.wrong[k] ? { x: [0, -6, 6, -4, 4, 0] } : { x: 0 }}
-              transition={{ duration: 0.25 }}
-            >
-              <Input
-                value={answers[k]}
-                onChange={(e) => setAnswers((s) => ({ ...s, [k]: e.target.value }))}
-                placeholder={`Profile 0${k === "p1" ? "1" : k === "p2" ? "2" : "3"} MD5`}
-                className={inputClass(k)}
-                disabled={solved}
-              />
-            </motion.div>
-          ))}
-        </div>
+          return (
+            <Card key={p.key} className="p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs tracking-[0.35em] text-white/55">{p.label}</div>
+                  <div className="mt-2 text-lg font-semibold tracking-tight">{p.name}</div>
+                  <div className="mt-1 text-xs text-white/55">{p.designation}</div>
+                </div>
 
-        {/* Actions */}
-        <div className="mt-6 flex items-center justify-between gap-3">
-          {!solved ? (
-            <>
-              <Button variant="ghost" onClick={retakeAttempt} title="Counts as a wrong attempt and clears inputs.">
-                <RotateCcw className="h-4 w-4" />
-                Retake Attempt
-              </Button>
-
-              <div className="flex items-center gap-3">
-                <Button variant="ghost" onClick={clearInputsNoPenalty}>
-                  Clear Inputs
-                </Button>
-                <motion.div whileTap={{ scale: 0.98 }}>
-                  <Button onClick={submit}>Submit All</Button>
-                </motion.div>
+                {ok === null ? null : ok ? (
+                  <span className="inline-flex items-center gap-1 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Correct
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-3 py-1 text-xs text-rose-200">
+                    <XCircle className="h-3.5 w-3.5" />
+                    Incorrect
+                  </span>
+                )}
               </div>
-            </>
+
+              <div className="mt-4 space-y-2 text-sm text-white/65">
+                <div><span className="text-white/45">Spouse:</span> <span className="text-white/80">{p.spouseName}</span></div>
+                <div><span className="text-white/45">Age:</span> <span className="text-white/80">{p.age}</span></div>
+                <div><span className="text-white/45">DOB:</span> <span className="text-white/80">{p.dob}</span></div>
+                <div><span className="text-white/45">Email:</span> <span className="text-white/80">{p.email}</span></div>
+                <div><span className="text-white/45">Company:</span> <span className="text-white/80">{p.company}</span></div>
+                <div><span className="text-white/45">Pets:</span> <span className="text-white/80">{p.pets.join(", ")}</span></div>
+                <div><span className="text-white/45">City:</span> <span className="text-white/80">{p.city}</span></div>
+              </div>
+
+              <div className="mt-5">
+                <div className="text-xs text-white/55 mb-2">MD5 (submit this)</div>
+                <Input
+                  className="font-mono"
+                  placeholder="Paste MD5 here..."
+                  value={answers[p.key]}
+                  onChange={(e) => setAnswers((s) => ({ ...s, [p.key]: e.target.value }))}
+                  disabled={solvedHere}
+                />
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      <Card className="p-6" hover={false}>
+        <div className="text-xs tracking-[0.35em] text-white/55">MD5 GENERATOR</div>
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+          <div>
+            <div className="text-xs text-white/55 mb-2">Plain text</div>
+            <Input
+              className="font-mono"
+              value={plain}
+              onChange={(e) => setPlain(e.target.value)}
+              placeholder="Type a password guess…"
+            />
+          </div>
+
+          <Button onClick={doGenerate} disabled={genLoading || !plain.trim()}>
+            Generate
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="mt-4">
+          <div className="text-xs text-white/55 mb-2">MD5 output</div>
+          <Input className="font-mono" value={generated} readOnly placeholder="MD5 will appear here…" />
+          <div className="mt-2 text-[11px] text-white/40">
+            Copy the MD5 output and paste it into the matching profile input above.
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-6" hover={false}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs tracking-[0.35em] text-white/55">NUDGES</div>
+            <div className="mt-2 text-sm text-white/60">Subtle hints appear after 2 minutes.</div>
+          </div>
+
+          {hintsUnlocked ? (
+            <span className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-200">
+              <Info className="h-4 w-4" />
+              Unlocked
+            </span>
           ) : (
-            <div className="ml-auto text-xs text-white/50">
-              Retake available above (Retake Challenge).
-            </div>
+            <span className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
+              <Info className="h-4 w-4" />
+              Locked (2:00)
+            </span>
           )}
+        </div>
+
+        <AnimatePresence initial={false}>
+          {hintsUnlocked && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.25 }}
+              className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3"
+            >
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/65">
+                <div className="text-xs text-white/50 mb-1">Profile 1</div>
+                Relationship fields can be “ingredients”. Sometimes a symbol sits between word and number.
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/65">
+                <div className="text-xs text-white/50 mb-1">Profile 2</div>
+                Some profiles have more than one pet. Not every date needs the full format.
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/65">
+                <div className="text-xs text-white/50 mb-1">Profile 3</div>
+                Company names often start with a key word. Sometimes only the first part matters.
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Card>
+
+      <Card className="p-6" hover={false}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-xs tracking-[0.35em] text-white/55">VERIFY</div>
+            <div className="mt-2 text-sm text-white/60">
+              Verify all three MD5 values to unlock the flag (submission happens on dashboard).
+            </div>
+          </div>
+
+          <Button onClick={validateAll} disabled={solvedHere}>
+            Verify
+            <ArrowRight className="h-4 w-4" />
+          </Button>
         </div>
       </Card>
     </div>
