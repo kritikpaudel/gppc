@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+/* -------------------------------------------------------
+   Global base styles (Tailwind v4 + modern UI defaults)
+-------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  background: #050507;
+}
+
+/* nicer selection */
+::selection {
+  background: rgba(255, 255, 255, 0.18);
+  color: white;
+}
+
+/* remove blue tap highlight on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* better focus visibility without ugly outlines */
+:focus-visible {
+  outline: none;
+}
+
+/* -------------------------------------------------------
+   Scrollbar (subtle, premium)
+-------------------------------------------------------- */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* -------------------------------------------------------
+   App container defaults
+-------------------------------------------------------- */
+#root {
+  min-height: 100vh;
+}
+
+/* -------------------------------------------------------
+   Utility classes (Tailwind v4 supports @layer utilities)
+-------------------------------------------------------- */
+@layer utilities {
+  /* subtle glass panel */
+  .glass {
+    @apply border border-white/10 bg-white/[0.05] backdrop-blur-xl;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03),
+      0 20px 60px rgba(0, 0, 0, 0.55);
+  }
+
+  /* soft edge shine used on cards/buttons */
+  .shine {
+    position: relative;
+    overflow: hidden;
+  }
+  .shine::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    background: radial-gradient(
+      900px circle at 20% 0%,
+      rgba(255, 255, 255, 0.12),
+      transparent 45%
+    );
+    pointer-events: none;
+  }
+
+  /* hairline border grid effect */
+  .hairline {
+    background-image: linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+    background-size: 28px 28px;
+    background-position: -1px -1px;
+  }
+
+  /* premium focus ring */
+  .focus-ring {
+    @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-0;
+  }
+
+  /* nicer text balance for headings */
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* -------------------------------------------------------
+   Forms (inputs/buttons baseline polish)
+-------------------------------------------------------- */
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* remove number input arrows where applicable */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* -------------------------------------------------------
+   Reduced motion respect
+-------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
