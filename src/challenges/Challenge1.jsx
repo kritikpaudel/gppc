@@ -6,7 +6,7 @@ import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { Copy, CheckCircle2, ShieldAlert, RotateCcw, ArrowLeft } from "lucide-react";
 
-const FLAG = "flag{triple_md5_master}";
+const FLAG = "FL@G{Woohoo_C0ng0_U_D!d_It}";
 
 const EXPECTED = {
   p1: "764b4f6bf8efe47b3ec2202f5c3cfa83",

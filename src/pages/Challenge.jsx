@@ -13,6 +13,7 @@ import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 
 import Challenge1 from "../challenges/Challenge1";
+import Challenge2 from "../challenges/Challenge2";
 
 import { ArrowLeft, Timer, X, CheckCircle2 } from "lucide-react";
 
@@ -92,7 +93,7 @@ export default function Challenge() {
     setFlagModal({ open: true, flag });
   };
 
-  // ✅ Retake the whole challenge (reset progress so it becomes playable again)
+  // Retake whole challenge
   const retakeChallenge = () => {
     if (!challenge) return;
 
@@ -101,7 +102,6 @@ export default function Challenge() {
     );
     if (!ok) return;
 
-    // close any flag modal
     setFlagModal({ open: false, flag: "" });
 
     setState((s) => ({
@@ -137,18 +137,10 @@ export default function Challenge() {
     return (
       <div className="min-h-screen text-white">
         <BackgroundFX />
-        <TopBar
-          title={EVENT_TITLE}
-          fullName={state.fullName}
-          points={totals.totalPoints}
-          time={totalTime}
-        />
+        <TopBar title={EVENT_TITLE} fullName={state.fullName} points={totals.totalPoints} time={totalTime} />
 
         <main className="mx-auto max-w-4xl px-5 pb-20 pt-10">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 text-sm text-white/70 hover:text-white"
-          >
+          <Link to="/" className="inline-flex items-center gap-2 text-sm text-white/70 hover:text-white">
             <ArrowLeft className="h-4 w-4" />
             Back to Dashboard
           </Link>
@@ -171,12 +163,7 @@ export default function Challenge() {
   return (
     <div className="min-h-screen text-white">
       <BackgroundFX />
-      <TopBar
-        title={EVENT_TITLE}
-        fullName={state.fullName}
-        points={totals.totalPoints}
-        time={totalTime}
-      />
+      <TopBar title={EVENT_TITLE} fullName={state.fullName} points={totals.totalPoints} time={totalTime} />
 
       <main className="mx-auto max-w-5xl px-5 pb-20 pt-10">
         <motion.div
@@ -186,10 +173,7 @@ export default function Challenge() {
           className="space-y-6"
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 text-sm text-white/70 hover:text-white"
-            >
+            <Link to="/" className="inline-flex items-center gap-2 text-sm text-white/70 hover:text-white">
               <ArrowLeft className="h-4 w-4" />
               Back to Dashboard
             </Link>
@@ -210,6 +194,7 @@ export default function Challenge() {
             </div>
           </div>
 
+          {/* ✅ Render correct challenge */}
           {id === "ch1" ? (
             <Challenge1
               solved={progress?.status === "solved"}
@@ -218,6 +203,11 @@ export default function Challenge() {
               onSolved={markSolved}
               onBack={() => navigate("/")}
               onRetakeChallenge={retakeChallenge}
+            />
+          ) : id === "ch2" ? (
+            <Challenge2
+              solved={progress?.status === "solved"}
+              onBack={() => navigate("/")}
             />
           ) : (
             <Card className="p-8" hover={false}>
