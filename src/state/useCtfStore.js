@@ -1,21 +1,27 @@
+// src/state/useCtfStore.js
 import { useEffect, useMemo, useState } from "react";
 import { CHALLENGES } from "../data/challenges";
 
 const LS_KEY = "ctf_state_v2_users";
 
-// Build a fresh challenge progress object
+function blankProgress() {
+  return {
+    openedAt: null,
+    timeMs: 0,
+    attempts: 0, // you use this as retakes
+    status: "unsolved", // unsolved | unlocked | submitted
+    solvedAt: null, // when flag was unlocked (inside challenge)
+    pointsAwarded: 0, // set when submitted on dashboard
+    revealedFlag: "", // set when unlocked inside challenge
+    submittedFlag: "", // set when submitted on dashboard
+    submittedAt: null, // timestamp when submitted on dashboard
+  };
+}
+
+// Build a fresh challenge progress object (for all challenge ids)
 function freshChallenges() {
   const obj = {};
-  for (const c of CHALLENGES) {
-    obj[c.id] = {
-      openedAt: null,
-      timeMs: 0,
-      attempts: 0,
-      status: "unsolved", // unsolved | solved
-      solvedAt: null,
-      pointsAwarded: 0,
-    };
-  }
+  for (const c of CHALLENGES) obj[c.id] = blankProgress();
   return obj;
 }
 
@@ -29,6 +35,34 @@ function freshUser(name = "") {
   };
 }
 
+function repairUserShape(u) {
+  const user = { ...u };
+  user.challenges = { ...(user.challenges || {}) };
+
+  // ensure every challenge exists + has full fields
+  for (const c of CHALLENGES) {
+    const existing = user.challenges[c.id] || {};
+    user.challenges[c.id] = {
+      ...blankProgress(),
+      ...existing,
+    };
+
+    // normalize legacy statuses
+    // old code sometimes used "solved"
+    if (user.challenges[c.id].status === "solved") {
+      // treat old "solved" as "submitted" to preserve scoring if any
+      user.challenges[c.id].status = "submitted";
+    }
+  }
+
+  // ensure metadata fields exist
+  user.fullName = user.fullName ?? "";
+  user.createdAt = user.createdAt ?? Date.now();
+  user.updatedAt = user.updatedAt ?? Date.now();
+
+  return user;
+}
+
 function computeTotals(user) {
   const challenges = user?.challenges || {};
   let totalPoints = 0;
@@ -39,11 +73,11 @@ function computeTotals(user) {
     const p = challenges[c.id];
     if (!p) continue;
     totalTimeMs += p.timeMs || 0;
+
     if (p.status === "submitted") {
       solvedCount += 1;
       totalPoints += p.pointsAwarded || 0;
     }
-
   }
 
   return { totalPoints, solvedCount, totalTimeMs };
@@ -56,31 +90,16 @@ function load() {
       const u = freshUser("");
       return { activeUserId: u.id, users: [u] };
     }
-    const parsed = JSON.parse(raw);
 
-    // basic shape repair
-    const users = Array.isArray(parsed.users) ? parsed.users : [];
-    if (users.length === 0) {
+    const parsed = JSON.parse(raw);
+    const usersRaw = Array.isArray(parsed.users) ? parsed.users : [];
+
+    if (usersRaw.length === 0) {
       const u = freshUser("");
       return { activeUserId: u.id, users: [u] };
     }
 
-    // ensure challenges exist
-    for (const u of users) {
-      u.challenges = u.challenges || {};
-      for (const c of CHALLENGES) {
-        if (!u.challenges[c.id]) {
-          u.challenges[c.id] = {
-            openedAt: null,
-            timeMs: 0,
-            attempts: 0,
-            status: "unsolved",
-            solvedAt: null,
-            pointsAwarded: 0,
-          };
-        }
-      }
-    }
+    const users = usersRaw.map(repairUserShape);
 
     const activeUserId =
       parsed.activeUserId && users.some((u) => u.id === parsed.activeUserId)
@@ -113,7 +132,7 @@ export function useCtfStore() {
 
   const totals = useMemo(() => computeTotals(activeUser), [activeUser]);
 
-  // ✅ setState updates ACTIVE USER only (keeps your existing code pattern)
+  // ✅ setState updates ACTIVE USER only
   const setState = (updater) => {
     setDb((prev) => {
       const idx = prev.users.findIndex((u) => u.id === prev.activeUserId);
@@ -122,8 +141,9 @@ export function useCtfStore() {
       const current = prev.users[idx];
       const nextUserState = typeof updater === "function" ? updater(current) : updater;
 
+      const repaired = repairUserShape(nextUserState);
       const users = prev.users.slice();
-      users[idx] = { ...nextUserState, updatedAt: Date.now() };
+      users[idx] = { ...repaired, updatedAt: Date.now() };
 
       return { ...prev, users };
     });
@@ -146,7 +166,7 @@ export function useCtfStore() {
     updateUser: (id, patch) =>
       setDb((prev) => {
         const users = prev.users.map((u) =>
-          u.id === id ? { ...u, ...patch, updatedAt: Date.now() } : u
+          u.id === id ? repairUserShape({ ...u, ...patch, updatedAt: Date.now() }) : u
         );
         return { ...prev, users };
       }),
@@ -155,15 +175,19 @@ export function useCtfStore() {
       setDb((prev) => {
         const users = prev.users.map((u) => {
           if (u.id !== id) return u;
-          return {
+
+          const challenges = { ...(u.challenges || {}) };
+          const base = challenges[chId] ? { ...blankProgress(), ...challenges[chId] } : blankProgress();
+
+          challenges[chId] = { ...base, ...patch };
+
+          return repairUserShape({
             ...u,
             updatedAt: Date.now(),
-            challenges: {
-              ...u.challenges,
-              [chId]: { ...u.challenges[chId], ...patch },
-            },
-          };
+            challenges,
+          });
         });
+
         return { ...prev, users };
       }),
 
@@ -174,8 +198,7 @@ export function useCtfStore() {
           const u = freshUser("");
           return { activeUserId: u.id, users: [u] };
         }
-        const activeUserId =
-          prev.activeUserId === id ? users[0].id : prev.activeUserId;
+        const activeUserId = prev.activeUserId === id ? users[0].id : prev.activeUserId;
         return { ...prev, users, activeUserId };
       }),
 
@@ -183,11 +206,11 @@ export function useCtfStore() {
       setDb((prev) => {
         const users = prev.users.map((u) =>
           u.id === id
-            ? {
+            ? repairUserShape({
                 ...u,
                 updatedAt: Date.now(),
                 challenges: freshChallenges(),
-              }
+              })
             : u
         );
         return { ...prev, users };
@@ -198,14 +221,11 @@ export function useCtfStore() {
     importJSON: (jsonText) =>
       setDb(() => {
         const parsed = JSON.parse(jsonText);
-        // reuse load repair logic by saving to LS then loading
         save(parsed);
         return load();
       }),
   };
 
-  // Keep old API surface: { state, setState, totals }
-  // plus admin helpers + all users list for admin panel
   return {
     state: activeUser,
     setState,

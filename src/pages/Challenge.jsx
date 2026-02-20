@@ -14,6 +14,8 @@ import Button from "../components/ui/Button";
 
 import Challenge1 from "../challenges/Challenge1";
 import Challenge2 from "../challenges/Challenge2";
+import Challenge3 from "../challenges/Challenge3";
+
 
 import { ArrowLeft, Timer, X, CheckCircle2 } from "lucide-react";
 
@@ -36,7 +38,7 @@ export default function Challenge() {
   // ✅ Active-only timer tick for this challenge:
   // Runs only while unsolved. Stops once flag is unlocked/submitted.
   useActiveTimer({
-    running: !!challenge && !challenge.comingSoon && progress?.status === "unsolved",
+    running: !!challenge && !challenge.comingSoon && progress?.status !== "unlocked" && progress?.status !== "submitted",
     onTick: (dt) => {
       setState((s) => ({
         ...s,
@@ -186,7 +188,7 @@ export default function Challenge() {
             </div>
           </div>
 
-          {id === "ch1" ? (
+          { id === "ch1" ? (
             <Challenge1
               status={status}
               retakes={retakes}
@@ -197,9 +199,14 @@ export default function Challenge() {
           ) : id === "ch2" ? (
             <Challenge2
               status={status}
-              retakes={retakes}
-              onUnlocked={markUnlocked} // if you later want CH2 to unlock inside challenge
               onBack={() => navigate("/")}
+              onRetakeChallenge={retakeChallenge}
+            />
+          ) : id === "ch3" ? (
+            <Challenge3
+              solved={progress?.status === "unlocked" || progress?.status === "submitted"}
+              onBack={() => navigate("/")}
+              onSolved={markSolved}
               onRetakeChallenge={retakeChallenge}
             />
           ) : (

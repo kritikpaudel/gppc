@@ -25,6 +25,7 @@ import {
 const FLAGS = {
   ch1: "FL@G{Woohoo_C0ng0_U_D!d_It}",
   ch2: "FL@G{lD0R_M@ster?}",
+  ch3: "FL@G{jwt_master}",
 };
 
 function Stat({ icon: Icon, label, value, sub }) {
