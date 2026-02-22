@@ -8,15 +8,15 @@ import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 
-import { Shield, Info, KeyRound, ArrowRight, RotateCcw } from "lucide-react";
+import { Shield, Info, KeyRound, ArrowRight, RotateCcw, Timer } from "lucide-react";
 
 import { EVENT_TITLE, CHALLENGES } from "../data/challenges";
 import { useCtfStore } from "../state/useCtfStore";
 import { formatTime } from "../lib/time";
 import { useActiveTimer } from "../hooks/useActiveTimer";
+import { computePoints } from "../lib/scoring";
 
 export const CH3_SESSION_KEY = "mini_ctf_ch3_session_v1";
-// Keep flag in ONE place (admin unlock writes revealedFlag into store)
 export const CH3_FLAG = "FL@G{ClientSide_Is_Not_Security}";
 
 function safeParse(json) {
@@ -40,14 +40,30 @@ function clearSessionKey() {
   localStorage.removeItem(CH3_SESSION_KEY);
 }
 
+function ChoiceCard({ title, description, picked, onPick }) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className={[
+        "w-full text-left rounded-2xl border px-4 py-3 transition",
+        picked ? "border-white/20 bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/7",
+      ].join(" ")}
+    >
+      <div className="text-sm font-semibold text-white/90">{title}</div>
+      <div className="mt-1 text-sm text-white/60 leading-relaxed">{description}</div>
+    </button>
+  );
+}
+
 export default function Challenge3({ solved = false, onBack, onRetakeChallenge }) {
   const navigate = useNavigate();
   const { state, setState, totals } = useCtfStore();
 
   const ch3Meta = CHALLENGES.find((c) => c.id === "ch3");
-  const progress = state.challenges?.ch3;
+  const progress = state.challenges?.ch3 || {};
 
-  // ✅ Timer (same behavior as your other challenges)
+  // Run challenge timer here too
   useActiveTimer({
     running: !!ch3Meta && !ch3Meta.comingSoon && progress?.status !== "submitted",
     onTick: (dt) => {
@@ -64,20 +80,29 @@ export default function Challenge3({ solved = false, onBack, onRetakeChallenge }
     },
   });
 
+  // Global top bar time
   const totalTime = formatTime(Math.floor((totals.totalTimeMs || 0) / 1000));
 
-  // Hint unlock after 120 seconds spent in CH3 pages
-  const seconds = Math.floor(((progress?.timeMs || 0) / 1000));
-  const hintVisible = seconds >= 120;
+  // Challenge-specific time
+  const chSeconds = Math.floor((progress?.timeMs || 0) / 1000);
+  const chTime = formatTime(chSeconds);
 
+  // Retakes
+  const retakes = progress?.retakes || 0;
+
+  // Points if submitted now
+  const pointsMax = ch3Meta?.pointsMax || 0;
+  const pointsIfNow = computePoints({ pointsMax, seconds: chSeconds, retakes });
+
+  // Hint unlock after 3 minutes
+  const hintVisible = chSeconds >= 180;
+
+  // Info CTF flow
   const [tab, setTab] = useState("info"); // info | task
   const [username, setUsername] = useState(state.fullName?.trim() ? state.fullName.trim() : "");
   const [password, setPassword] = useState("");
 
-  // Keep a local copy of sessionRaw so UI updates instantly
   const [sessionRaw, setSessionRaw] = useState("");
-
-  // Load session on mount + keep username synced with full name
   useEffect(() => {
     setSessionRaw(readSessionRaw());
   }, []);
@@ -86,7 +111,6 @@ export default function Challenge3({ solved = false, onBack, onRetakeChallenge }
     if (state.fullName?.trim()) setUsername(state.fullName.trim());
   }, [state.fullName]);
 
-  // Optional: refresh session when tab changes (nice for UX)
   useEffect(() => {
     setSessionRaw(readSessionRaw());
   }, [tab]);
@@ -96,7 +120,6 @@ export default function Challenge3({ solved = false, onBack, onRetakeChallenge }
   const login = () => {
     const newSession = {
       username: (username || "user").trim() || "user",
-      // Always creates a normal user session from UI
       role: "user",
       issuedAt: Date.now(),
     };
@@ -109,10 +132,14 @@ export default function Challenge3({ solved = false, onBack, onRetakeChallenge }
     setSessionRaw("");
   };
 
-  // ✅ Fix: do NOT show flag unless it was actually unlocked by admin page.
+  // Fix: show flag only if revealedFlag exists
   const showUnlockedStatus =
     (progress?.status === "unlocked" || progress?.status === "submitted") &&
     !!progress?.revealedFlag;
+
+  // Minimal interactive bits for the Basics tab
+  const [pick, setPick] = useState(null); // "friend" | "guard"
+  const [step, setStep] = useState(0); // 0..2
 
   return (
     <div className="min-h-screen text-white">
@@ -120,8 +147,30 @@ export default function Challenge3({ solved = false, onBack, onRetakeChallenge }
       <TopBar title={EVENT_TITLE} fullName={state.fullName} points={totals.totalPoints} time={totalTime} />
 
       <main className="mx-auto max-w-5xl px-5 pb-20 pt-10">
+        {/* Challenge2-style header strip (same alignment, no emojis) */}
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+          <Button variant="ghost" onClick={onBack} className="inline-flex items-center gap-2">
+            ← Back to Dashboard
+          </Button>
+
+          <div className="flex flex-wrap items-start gap-6">
+            <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70">
+              <Timer className="h-4 w-4 opacity-80" />
+              <span>{chTime}</span>
+            </div>
+
+            <div className="text-right">
+              <div className="text-sm text-white/70">
+                Points if submitted now:{" "}
+                <span className="text-white/90 font-semibold">{pointsIfNow}</span>
+              </div>
+              <div className="text-xs text-white/45">Retakes: {retakes}</div>
+            </div>
+          </div>
+        </div>
+
         <div className="space-y-6">
-          {/* Header Card */}
+          {/* Header Card (unchanged) */}
           <Card className="p-6" hover={false}>
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -130,8 +179,7 @@ export default function Challenge3({ solved = false, onBack, onRetakeChallenge }
                   Client Trust — Role Based Access
                 </h2>
                 <p className="mt-3 text-white/60 text-sm leading-relaxed">
-                  First read the basics (simple words). Then do the task. This challenge is about how
-                  websites decide who is a normal user and who is an admin.
+                  Read the basics first (simple words), then do the task.
                 </p>
               </div>
 
@@ -155,77 +203,123 @@ export default function Challenge3({ solved = false, onBack, onRetakeChallenge }
 
               <div className="flex-1" />
 
-              <Button variant="ghost" onClick={onBack}>
-                Back
-              </Button>
-
               <Button variant="ghost" onClick={onRetakeChallenge}>
                 <RotateCcw className="h-4 w-4" />
-                Retake
+                Retake (-10%)
               </Button>
             </div>
           </Card>
 
-          {/* INFO TAB */}
+          {/* INFO TAB (updated only here) */}
           {tab === "info" && (
             <Card className="p-6" hover={false}>
               <div className="text-xs tracking-[0.35em] text-white/55">BASICS</div>
 
               <div className="mt-4 space-y-4 text-sm text-white/70 leading-relaxed">
                 <div>
-                  <div className="text-white/90 font-medium">1) Role</div>
+                  <div className="text-white/90 font-medium">A simple story</div>
                   <div className="mt-1 text-white/60">
-                    A <span className="text-white/80">role</span> is a label that decides what you’re allowed
-                    to access. Example: a normal “user” can browse pages, but an “admin” can see restricted areas.
+                    Imagine a building with two rooms: a public room and an admin room. The important part is:
+                    who checks your badge before you enter the admin room?
                   </div>
                 </div>
 
-                <div>
-                  <div className="text-white/90 font-medium">2) Access Check</div>
-                  <div className="mt-1 text-white/60">
-                    Some pages check your role before letting you in. If you don’t have the right role, the page
-                    blocks you.
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <ChoiceCard
+                    title="Your friend checks your badge"
+                    description="Your friend says you are admin, so you walk in."
+                    picked={pick === "friend"}
+                    onPick={() => setPick("friend")}
+                  />
+                  <ChoiceCard
+                    title="A security guard checks your badge"
+                    description="A guard checks your badge every time before opening the admin door."
+                    picked={pick === "guard"}
+                    onPick={() => setPick("guard")}
+                  />
+                </div>
+
+                {pick && (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-white/60">
+                    <div className="text-white/85 font-medium">What this teaches</div>
+                    <div className="mt-1">
+                      {pick === "guard"
+                        ? "This is safer. Important checks should be done by the website side, not only by the browser."
+                        : "This is risky. If the website trusts the browser too much, someone can pretend."}
+                    </div>
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-white/60">
+                  <div className="text-white/85 font-medium">Quick definitions</div>
+                  <div className="mt-2 space-y-2">
+                    <div>
+                      <span className="text-white/80 font-medium">Role:</span>{" "}
+                      A label like user or admin that decides what you can open.
+                    </div>
+                    <div>
+                      <span className="text-white/80 font-medium">Session:</span>{" "}
+                      A small saved note that can include your username and role.
+                    </div>
+                    <div>
+                      <span className="text-white/80 font-medium">Client-side vs server-side:</span>{" "}
+                      Client-side means the browser decides. Server-side means the website decides.
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <div className="text-white/90 font-medium">3) Client vs Server</div>
-                  <div className="mt-1 text-white/60">
-                    <span className="text-white/80">Client-side</span> means your browser decides.
-                    <br />
-                    <span className="text-white/80">Server-side</span> means the website’s server decides.
-                    <br />
-                    If a website trusts the browser too much for security decisions, it can be risky.
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-white/60">
+                  <div className="text-white/85 font-medium">Mini walk-through</div>
+                  <div className="mt-2 text-white/60">
+                    Step {step + 1} of 3
                   </div>
-                </div>
+                  <div className="mt-2">
+                    {step === 0 &&
+                      "You press Login. The site saves a session in your browser so it remembers you."}
+                    {step === 1 &&
+                      "You try the admin page. The admin page checks the role inside the saved session."}
+                    {step === 2 &&
+                      "If a website trusts that saved role without strong checks, restricted pages can be exposed."}
+                  </div>
 
-                <div>
-                  <div className="text-white/90 font-medium">4) Timer & Score</div>
-                  <div className="mt-1 text-white/60">
-                    Your timer runs while you’re working in the challenge pages. Points reduce mainly based on time,
-                    and retakes (if you retake).
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <Button
+                      variant="ghost"
+                      onClick={() => setStep((s) => Math.max(0, s - 1))}
+                      disabled={step === 0}
+                      className={step === 0 ? "opacity-50" : ""}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => setStep((s) => Math.min(2, s + 1))}
+                      disabled={step === 2}
+                      className={step === 2 ? "opacity-50" : ""}
+                    >
+                      Next
+                    </Button>
+
+                    <div className="flex-1" />
+
+                    <Button onClick={() => setTab("task")}>
+                      Start Task
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-white/60">
                   <div className="text-white/85 font-medium">Your task</div>
                   <div className="mt-1">
-                    Log in to get a local “session” saved in your browser. Then try to access the admin panel and
-                    unlock the flag.
+                    Log in to create a local session in your browser. Then go to the admin page and unlock the flag.
                   </div>
                 </div>
-              </div>
-
-              <div className="mt-6 flex justify-end">
-                <Button onClick={() => setTab("task")}>
-                  Start Task
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
               </div>
             </Card>
           )}
 
-          {/* TASK TAB */}
+          {/* TASK TAB (unchanged except hint becomes a clearer hint section) */}
           {tab === "task" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Login + actions */}
@@ -279,12 +373,12 @@ export default function Challenge3({ solved = false, onBack, onRetakeChallenge }
                     </Button>
                   </div>
 
+                  {/* Hint section (only appears after 3 mins, same behavior as before) */}
                   {hintVisible && (
                     <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/60">
-                      <div className="text-white/85 font-medium">System Note</div>
+                      <div className="text-white/85 font-medium">Hint</div>
                       <div className="mt-1">
                         This app reads your access level from something saved locally in your browser.
-                        If the browser stores it, the browser can also change it.
                       </div>
                     </div>
                   )}
@@ -315,10 +409,6 @@ export default function Challenge3({ solved = false, onBack, onRetakeChallenge }
                       <pre className="text-xs text-white/70 overflow-auto">
 {JSON.stringify(session, null, 2)}
                       </pre>
-
-                      <div className="text-xs text-white/40">
-                        Tip: this is only a preview. The admin page decides access using the stored role.
-                      </div>
                     </div>
                   )}
                 </div>
@@ -338,7 +428,7 @@ export default function Challenge3({ solved = false, onBack, onRetakeChallenge }
             </div>
           )}
 
-          {/* ✅ STATUS (only if unlocked AND revealedFlag exists) */}
+          {/* STATUS only if revealedFlag exists (unchanged) */}
           {showUnlockedStatus && (
             <Card className="p-6" hover={false}>
               <div className="text-xs tracking-[0.35em] text-white/55">STATUS</div>

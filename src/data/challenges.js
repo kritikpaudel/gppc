@@ -40,9 +40,9 @@ export const CHALLENGES = [
   {
     id: "ch3",
     title: "Challenge 3 — Client-Side Trust",
-    category: "Web",
+    category: "Easy",
     difficulty: "Easy–Medium",
-    pointsMax: 150,
+    pointsMax: 100,
     comingSoon: false,
     description:
       "A portal stores session state in the browser. Find a way to access the restricted admin area and unlock the flag.",
